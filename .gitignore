@@ -1,0 +1,10 @@
+badges/
+temp_docs/
+dist/
+__pycache__/
+*.pyc
+poppler/
+poppler_release.zip
+poppler.zip
+
+_tpl_unpacked/
