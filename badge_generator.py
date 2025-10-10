@@ -2,16 +2,33 @@
 # -*- coding: utf-8 -*-
 """
 Word Template Badge Generator for VIMC
-Sá»­ dá»¥ng Word template cÃ³ sáºµn â†’ Thay tháº¿ text â†’ Export PNG
+Sá»­ dá»¥ng Word template cÃ³ sáºµn â†' Thay tháº¿ text (giá»¯ nguyÃªn format) â†' Export PNG
 """
 
 import pandas as pd
-from docxtpl import DocxTemplate
+from docx import Document
 from docx2pdf import convert
 from pdf2image import convert_from_path
 import os
 import shutil
+import sys
 from pathlib import Path
+import platform
+import re
+
+# Ensure stdout/stderr use UTF-8 so Vietnamese accents print correctly on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+REQUIRED_FONT_KEYWORDS = ['faustina']
+
+# Common font directories to scan on Windows for installed fonts
+WINDOWS_FONT_DIRS = [
+    Path(os.environ.get('WINDIR', r'C:\Windows')) / 'Fonts',
+    Path.home() / 'AppData' / 'Local' / 'Microsoft' / 'Windows' / 'Fonts',
+]
 
 # ===== Cáº¤U HÃŒNH =====
 TEMPLATE_FILE = 'badge_template.docx'  # File Word template cá»§a báº¡n
@@ -43,6 +60,30 @@ def resolve_poppler_path():
 
 POPPLER_PATH = resolve_poppler_path()
 
+def find_missing_fonts():
+    """
+    Check for required fonts so rendered badges match the expected styling.
+    Returns a list of font keywords that were not found.
+    """
+    if platform.system() != 'Windows':
+        return []
+
+    available_names = set()
+    for font_dir in WINDOWS_FONT_DIRS:
+        if not font_dir.exists():
+            continue
+        for pattern in ('*.ttf', '*.otf'):
+            for font_path in font_dir.glob(pattern):
+                available_names.add(font_path.stem.lower())
+                available_names.add(font_path.name.lower())
+
+    missing = []
+    for keyword in REQUIRED_FONT_KEYWORDS:
+        keyword_lower = keyword.lower()
+        if not any(keyword_lower in name for name in available_names):
+            missing.append(keyword)
+    return missing
+
 def setup_template():
     """
     HÆ°á»›ng dáº«n táº¡o template náº¿u chÆ°a cÃ³
@@ -65,6 +106,61 @@ def setup_template():
         return False
     return True
 
+def replace_text_in_paragraph(paragraph, placeholders):
+    """
+    Replace placeholders in a paragraph while preserving formatting.
+    Works by replacing text in runs without changing their style.
+    """
+    # Build full paragraph text
+    full_text = ''.join(run.text for run in paragraph.runs)
+
+    # Replace ALL placeholders in the text
+    modified = False
+    for placeholder, value in placeholders.items():
+        if placeholder in full_text:
+            full_text = full_text.replace(placeholder, value)
+            modified = True
+
+    # If any replacement was made, update the runs
+    if modified:
+        # Clear all runs and put new text in first run to preserve its formatting
+        for i, run in enumerate(paragraph.runs):
+            if i == 0:
+                run.text = full_text
+            else:
+                run.text = ''
+
+def replace_in_textboxes(doc, placeholders):
+    """
+    Replace placeholders in textboxes while preserving formatting for each run.
+    This approach replaces text within each run individually to keep formatting like bold.
+    """
+    namespaces = {
+        'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    }
+
+    # Find all textbox content elements
+    textboxes = doc.element.body.findall('.//w:txbxContent', namespaces)
+
+    for textbox in textboxes:
+        # Get all paragraphs within the textbox
+        paras = textbox.findall('.//w:p', namespaces)
+        for para_elem in paras:
+            # Get all text runs
+            runs = para_elem.findall('.//w:r', namespaces)
+
+            # Process each run individually to preserve formatting
+            for run in runs:
+                t_elems = run.findall('.//w:t', namespaces)
+                for t in t_elems:
+                    if t.text:
+                        # Replace placeholders in this specific text element
+                        original = t.text
+                        for placeholder, value in placeholders.items():
+                            if placeholder in original:
+                                t.text = original.replace(placeholder, value)
+                                original = t.text
+
 def create_badge_from_template(data, index):
     """
     Táº¡o badge tá»« template cho 1 ngÆ°á»i
@@ -77,11 +173,29 @@ def create_badge_from_template(data, index):
         Path to PNG file
     """
     # Load template
-    doc = DocxTemplate(TEMPLATE_FILE)
-    
-    # Render vá»›i data
-    doc.render(data)
-    
+    doc = Document(TEMPLATE_FILE)
+
+    # Create placeholders mapping
+    placeholders = {
+        '{{prefix}}': data['prefix'],
+        '{{name}}': data['name'],
+        '{{position}}': data['position']
+    }
+
+    # Replace in all paragraphs
+    for paragraph in doc.paragraphs:
+        replace_text_in_paragraph(paragraph, placeholders)
+
+    # Replace in tables (if any)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    replace_text_in_paragraph(paragraph, placeholders)
+
+    # Replace in textboxes (most important for this template!)
+    replace_in_textboxes(doc, placeholders)
+
     # Save Word file táº¡m
     temp_docx = os.path.join(TEMP_DIR, f'temp_{index:03d}.docx')
     doc.save(temp_docx)
@@ -170,15 +284,15 @@ def generate_all_badges():
     
     # Chuáº©n hÃ³a tÃªn cá»™t (há»— trá»£ tiáº¿ng Viá»‡t)
     column_mapping = {
-        'há» vÃ  tÃªn': 'name',
-        'há» tÃªn': 'name', 
-        'tÃªn': 'name',
+        'họ và tên': 'name',
+        'họ tên': 'name', 
+        'tên': 'name',
         'name': 'name',
-        'chá»©c vá»¥': 'position',
-        'chá»©c danh': 'position',
+        'chức vụ': 'position',
+        'chức danh': 'position',
         'position': 'position',
         'title': 'position',
-        'danh xÆ°ng': 'prefix',
+        'danh xưng': 'prefix',
         'prefix': 'prefix',
         'mr/mrs': 'prefix'
     }
@@ -292,9 +406,9 @@ def check_dependencies():
         missing.append('pandas')
     
     try:
-        import docxtpl
+        import docx
     except:
-        missing.append('python-docx-template')
+        missing.append('python-docx')
     
     try:
         import docx2pdf
@@ -320,8 +434,12 @@ def check_dependencies():
         return False
     
     # Check for Word (Windows)
-    import platform
     if platform.system() == 'Windows':
+        missing_fonts = find_missing_fonts()
+        if missing_fonts:
+            print("WARNING: Faustina font files were not found on this machine.")
+            print("         Install the Faustina family (Regular and Bold) so the badges match the reference design.")
+            print("         Download: https://github.com/google/fonts/tree/main/ofl/faustina")
         try:
             import win32com.client
             word = win32com.client.Dispatch("Word.Application")
