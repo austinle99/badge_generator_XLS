@@ -219,12 +219,12 @@ def create_badge_from_template(data, index):
             print("Poppler path not found in project; falling back to system PATH.")
             create_badge_from_template._poppler_warned = True
 
-        images = convert_from_path(temp_pdf, dpi=300, fmt='png', **poppler_kwargs)
+        images = convert_from_path(temp_pdf, dpi=200, fmt='png', **poppler_kwargs)
         
         # Save PNG
         output_file = os.path.join(OUTPUT_DIR, 
                                   f"{index:03d}_{data['name'].replace(' ', '_')}.png")
-        images[0].save(output_file, 'PNG', quality=95)
+        images[0].save(output_file, 'PNG', quality=85)
         
         # Cleanup temp files
         os.remove(temp_docx)
