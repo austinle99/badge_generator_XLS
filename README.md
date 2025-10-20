@@ -16,12 +16,26 @@ Create print-ready conference badges from a Word template and an attendee spread
 - The following Python packages:
   - `pandas`, `docxtpl`, `docx2pdf`, `pdf2image`, `openpyxl`, `pywin32`
 
-## Initial Setup
+## Quick Setup (Recommended)
+1. **Install Python 3.8 or higher** from [python.org/downloads](https://www.python.org/downloads/)
+   - During installation, check **"Add Python to PATH"**
+2. **Run the automated setup script:**
+   ```powershell
+   .\setup.ps1
+   ```
+   This will automatically install all required Python packages from `requirements.txt`.
+
+3. **Install Faustina font** (for proper badge text rendering):
+   - Download from: [Google Fonts - Faustina](https://github.com/google/fonts/tree/main/ofl/faustina)
+   - Install both Regular and Bold variants
+
+## Manual Setup (Alternative)
+If you prefer to install dependencies manually:
 1. Open PowerShell in the project root.
 2. Install dependencies (use `--user` if you do not have admin rights):
    ```powershell
    python -m pip install --upgrade pip
-   python -m pip install pandas docxtpl docx2pdf pdf2image openpyxl pywin32
+   python -m pip install -r requirements.txt
    ```
    _Tip:_ keep the same Python version across machines for consistent wheel compatibility.
 3. If you obtained Poppler separately, set the `POPPLER_PATH` environment variable to its `bin` directory, or place the Poppler folder inside this project (`poppler/.../Library/bin`). The script automatically detects both locations.
